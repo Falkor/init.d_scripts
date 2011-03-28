@@ -14,8 +14,7 @@ I try to be compatible with the [LSB](http://wiki.debian.org/LSB)
 
 Contributed scripts:
 
-* `template`: a generic template file
-* `firewall`: 
+* `firewall`: iptables-based configuration. 
 
 ## Environment
 

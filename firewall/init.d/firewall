@@ -1,0 +1,302 @@
+#! /bin/bash
+#
+# Time-stamp: <Mon 2011-03-28 23:54 svarrette>
+# ---------------------------------------------------------------------------
+# Copyright (c) 2011 Sebastien Varrette <Sebastien.Varrette@uni.lu>
+#               http://varrette.gforge.uni.lu
+#
+# /etc/init.d/firewall -- Configure the iptables firewall with LSB support.
+#
+# Related files / links:
+#     - /etc/default/firewall: default variables configuration
+#     - LSB support: http://wiki.debian.org/LSBInitScripts
+# Resources:
+#     - etc/init.d/skeleton
+#     - utrac debian/init.d.lsb.ex file (http://bzr.harobed.org/utrac/utrac)
+#
+# This script is hosted and managed on Github, get the latest version from
+#                https://github.com/Falkor/init.d_scripts
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+# ---------------------------------------------------------------------------
+# Below are the Linux Standard Base (LSB) specifications for this script.
+#
+### BEGIN INIT INFO
+# Provides:          firewall
+# Required-Start:    mountkernfs ifupdown $local_fs
+# X-Start-Before:    networking
+# Default-Start:     S
+# Required-Stop:
+# Default-Stop:
+# Short-Description: Configure the ip(6)tables firewall.
+# Description:       Configure the ip(6)tables firewall.
+### END INIT INFO
+#
+# Script variables
+#
+VERSION=0.5
+PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
+DESC="Configuration of the ip(6)tables-based firewall"
+NAME=firewall
+SCRIPTNAME=/etc/init.d/${NAME}
+
+# Required binaries (iptables etc)
+iptables=`which iptables`
+
+# By default, this machine interfaces the WAN network via eth0
+# (i.e. WAN_INTERFACE) as follows:
+#                          +-------------+
+#                          |             |
+#  (WAN Network)-----[eth0]|             |
+#                          |             |
+#                          +-------------+
+WAN_INTERFACE=eth0
+#
+# Enventually, if DO_NAT='yes', this machine also provides NAT with the internal
+# (LAN) network connected to eth1, leadin to the following configuration:
+#                          +-------------+
+#                          |             |
+#  (WAN Network)-----[eth0]|- - -NAT- - -|[eth1]-----(Internal LAN Network)
+#                          |             |
+#                          +-------------+
+DO_NAT='no'
+# If DO_NAT='no', the following two variables are not used
+LAN_INTERFACE=eth1
+LAN_NETWORK=192.168.200.0/24   # Format: Network/netmask
+
+# When the firewall is activated, by default, no port is opened.
+# Now list the TCP ports that need to be opened (see also /etc/services)
+#   22:      ssh
+#   80/443 : http/https
+#
+# Format: TCP_PORTS_TO_OPEN="port1 port2 ..."
+TCP_PORTS_TO_OPEN="22 80 443"
+# TODO: the same for UDP ?
+
+# ICMP (i.e. ping) setup for the WAN interface
+#    Note: icmp is always authorized from the eventual LAN interface 
+AUTHORIZE_ICMP="no"
+
+#
+# ---------------------------------------------------------------------------
+#
+
+# Load the VERBOSE setting and other rcS variables
+. /lib/init/vars.sh
+
+# Define LSB log_* functions.
+# Depend on lsb-base (>= 3.0-6) to ensure that this file is present.
+. /lib/lsb/init-functions
+
+# Include defaults if available
+[ -r /etc/default/${NAME} ] && . /etc/default/$NAME
+
+######### specific  functions ##########
+
+# Various print functions
+print_error_and_exit() { echo $1; exit 1; }
+print_usage() {
+    cat <<EOF
+This is $SCRIPTNAME version "$VERSION".
+Startup script for the ${DESC}.
+
+   Copyright (c) 2011 Sebastien Varrette  (http://varrette.gforge.uni.lu)
+
+Usage: $SCRIPTNAME {start|stop|restart|status|restart|reload|force-reload}
+
+This is free software; see the source for copying conditions.  There is NO
+warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+EOF
+}
+
+###
+# Activate NAT on this machine
+##
+set_nat_masquerading() {
+	[ -z "${LAN_INTERFACE}" ] && print_error_and_exit "No LAN interface set"
+	[ -z "${LAN_NETWORK}" ] && print_error_and_exit "No LAN network set"
+
+    # activate kernel support for IP forwarding"
+    NAT_KERNEL_FILE=/proc/sys/net/ipv4/ip_forward
+    [ ! -f "${NAT_KERNEL_FILE}" ] && \
+        print_error_and_exit "Error: unable to find the file ${NAT_KERNEL_FILE} required to activate NAT on this server."
+    echo "1" > /proc/sys/net/ipv4/ip_forward
+
+    # TO DO?
+    # Now need to edit /etc/sysctl.conf and change the line that says
+    # net.ipv4.ip_forward = 0 to net.ipv4.ip_forward = 1.
+
+    # Enable NAT masquerading
+    $iptables -t nat -A POSTROUTING -s ${LAN_NETWORK} -o ${WAN_INTERFACE} -j MASQUERADE
+
+	# Authorize input packets from the internal (LAN) network 
+    $iptables -A INPUT -s $LAN_NETWORK -i $LAN_INTERFACE -j ACCEPT
+
+    # Authorize packet forwarding from internal (LAN) network
+	# i.e. ${LAN_INTERFACE} to the external (WAN) network i.e. ${WAN_INTERFACE} 
+    $iptables -A FORWARD -s $LAN_NETWORK -i $LAN_INTERFACE -o $WAN_INTERFACE -j ACCEPT
+
+    # Authorize response packets
+    $iptables -A FORWARD -d $LAN_NETWORK -i $WAN_INTERFACE -o $LAN_INTERFACE -m state --state RELATED,ESTABLISHED  -j ACCEPT
+}
+
+###
+# get the status of the firewall
+##
+do_status() {
+    echo "=== iptables-based firewall configuration (version $VERSION) ==="
+    echo "   - WAN interface: ${WAN_INTERFACE}"
+	echo "   - NAT configuration: ${DO_NAT}"
+    if [ "$DO_NAT" == "yes" ]; then
+        echo "   - LAN interface: ${LAN_INTERFACE}"
+        echo "   - LAN network:   ${LAN_NETWORK}"
+        echo " "
+    fi
+    echo -e " --- Default  rules ---\n"
+    $iptables -L -v
+    RETVAL=$?
+    if [ "$DO_NAT" == "yes" ]; then
+        echo -e "\n"
+        echo -e " --- NAT configuration ---\n"
+        $iptables -t nat -L -v
+    fi
+    return $RETVAL
+}
+
+###
+# stop the firewall: flush and reset all iptables rules
+##
+do_stop() {
+	# flush the tables
+    $iptables -F
+	if [ "$DO_NAT" == "yes" ]; then
+        $iptables -t nat -F
+    fi
+	# delete user-defined rules
+    $iptables -X
+	# reset default rules (to accept everything)
+    $iptables -P INPUT   ACCEPT
+    $iptables -P FORWARD ACCEPT
+    $iptables -P OUTPUT  ACCEPT
+    RETVAL=$?
+    return $RETVAL
+}
+
+
+###
+# start the firewall
+##
+do_start() {
+    # Initializations
+    $iptables -F
+    $iptables -X
+
+	# reject almost everything !
+    $iptables -P INPUT   DROP
+    $iptables -P FORWARD DROP
+    $iptables -P OUTPUT  ACCEPT
+
+    # Accept any local connection (on lo)
+    $iptables -A INPUT   -i lo -j ACCEPT
+    $iptables -A FORWARD -i lo -j ACCEPT
+    $iptables -A FORWARD -o lo -j ACCEPT
+
+    # Eventually, activate NAT masquerading
+	if [ "${DO_NAT}" == "yes" ]; then
+        set_nat_masquerading
+
+		# Authorize ICMP from LAN (but no more than 2 pings per secondes)
+		$iptables -A INPUT -i ${LAN_INTERFACE} -p icmp -m state --state NEW,ESTABLISHED,RELATED -j ACCEPT
+		$iptables -A INPUT -i ${LAN_INTERFACE} -p icmp -m limit --limit 2/s -j ACCEPT
+    fi
+	
+	# Eventually, authorize ICMP protocol on the WAN interface
+	if [ "${AUTHORIZE_ICMP}" == "yes" ]; then
+		$iptables -A INPUT -i ${WAN_INTERFACE} -p icmp -m state --state NEW,ESTABLISHED,RELATED -j ACCEPT
+		$iptables -A INPUT -i ${WAN_INTERFACE} -p icmp -m limit --limit 2/s -j ACCEPT
+	fi 
+
+	# Open the TCP ports from WAN 
+	for port in ${TCP_PORTS_TO_OPEN}; do
+		$iptables -A INPUT -p tcp --dport $port -i ${WAN_INTERFACE} -j ACCEPT 
+    done
+
+	# Accept any entering packet relative to connections already established
+    $iptables -A INPUT -m state --state RELATED,ESTABLISHED -j ACCEPT
+
+    RETVAL=$?
+    return $RETVAL
+}
+
+
+############ Let's go ###########
+
+# Exit if the script is not present
+if [ ! -x "${SCRIPTNAME}" ]; then
+    print_error_and_exit "Could not find ${SCRIPTNAME}"
+fi
+
+# Run only as root
+if [ $UID -gt 0 ]; then
+    print_error_and_exit "You must be root to execute this script (current uid: $UID)"
+fi
+
+# Ensure the binaries are available
+if [ -z "$iptables" ]; then
+    print_error_and_exit "cannot find the iptables command: now exiting"
+fi
+
+RETVAL=0
+case "$1" in
+    start)
+        log_daemon_msg "Starting $DESC" "$NAME"
+        do_start
+        RETVAL=$?
+        log_end_msg $RETVAL
+        ;;
+    stop)
+        log_daemon_msg "Stopping $DESC" "$NAME"
+        do_stop
+        RETVAL=$?
+		log_end_msg $RETVAL
+        ;;
+    restart|reload|force-reload)
+        log_daemon_msg "Restarting $DESC" "$NAME"
+        do_stop
+        RETVAL=$?
+        if [ $RETVAL -ne 0 ]; then
+            log_progress_msg "stopping "
+            log_end_msg 1
+            exit $RETVAL
+        fi
+        do_start
+        RETVAL=$?
+        case "$RETVAL" in
+            0) log_end_msg 0 ;;
+            *) log_progress_msg "starting "; log_end_msg 1 ;;
+        esac
+		echo " => status after restarting"
+        do_status
+        ;;
+    status)
+        do_status
+        RETVAL=$?
+        ;;
+    *)
+        print_usage
+        RETVAL=3;;
+esac
+
+exit $RETVAL
+:

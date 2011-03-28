@@ -1,0 +1,27 @@
+#
+# Options for /etc/init.d/firewall (iptables-based firewall)
+# 
+ 
+###
+# Main interface to the external (WAN) network
+###
+#WAN_INTERFACE=eth0
+
+###
+# NAT setup
+###
+#DO_NAT='yes'
+#
+# Specify internal (LAN) characteristics
+#LAN_INTERFACE=eth1
+#LAN_NETWORK=192.168.100.0/24   # Format: Network/netmask
+
+###
+# Ports to be opened (space-separated list of ports)
+###
+#TCP_PORTS_TO_OPEN="22 80 443"
+
+###
+# ICMP seetings
+###
+#AUTHORIZE_ICMP="no"

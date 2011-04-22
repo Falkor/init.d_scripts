@@ -17,6 +17,13 @@
 #LAN_NETWORK=192.168.100.0/24   # Format: Network/netmask
 
 ###
+# Xen Bridge setup 
+###
+#DO_XEN_BRIDGING='no'
+# List of the physical network interface(s) that the bridge(s) connects to
+#XEN_BRIDGED_INTERFACES="peth1"
+
+###
 # Ports to be opened (space-separated list of ports)
 ###
 #TCP_PORTS_TO_OPEN="22 80 443"

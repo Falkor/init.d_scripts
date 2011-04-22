@@ -1,6 +1,6 @@
 #! /bin/bash
 #
-# Time-stamp: <Fri 2011-04-22 18:07 svarrette>
+# Time-stamp: <Fri 2011-04-22 18:11 svarrette>
 # ---------------------------------------------------------------------------
 # Copyright (c) 2011 Sebastien Varrette <Sebastien.Varrette@uni.lu>
 #               http://varrette.gforge.uni.lu
@@ -89,18 +89,22 @@ DO_NAT='no'
 # If DO_NAT='no', the following two variables are not used
 LAN_INTERFACE=eth1
 LAN_NETWORK=192.168.200.0/24   # Format: Network/netmask
-#########################################################
 
-#### Xen Bridging
+#### Xen Bridging #########
 # Eventually, if DO_XEN_BRIDGING='yes', this machine also run a Xen domO and a
-# network bridge on one or more interfaces 
+# network bridge on one or more interfaces
 DO_XEN_BRIDGING='no'
+
+# Xen network references: http://wiki.xensource.com/xenwiki/XenNetworking
+# Alternative resource: http://www.standingonthebrink.com/index.php/tag/ip6tables/
+
+# List of the physical network interface(s) that the bridge(s) connects to
 XEN_BRIDGED_INTERFACES="peth1"
+# TODO: shall I consider also bridge names??? 
 
 #
 # ---------------------------------------------------------------------------
 #
-
 # Load the VERBOSE setting and other rcS variables
 . /lib/init/vars.sh
 

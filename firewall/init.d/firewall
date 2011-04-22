@@ -1,6 +1,6 @@
 #! /bin/bash
 #
-# Time-stamp: <Mon 2011-03-28 23:54 svarrette>
+# Time-stamp: <Fri 2011-04-22 17:53 svarrette>
 # ---------------------------------------------------------------------------
 # Copyright (c) 2011 Sebastien Varrette <Sebastien.Varrette@uni.lu>
 #               http://varrette.gforge.uni.lu
@@ -54,6 +54,7 @@ SCRIPTNAME=/etc/init.d/${NAME}
 # Required binaries (iptables etc)
 iptables=`which iptables`
 
+##########################################################################
 # By default, this machine interfaces the WAN network via eth0
 # (i.e. WAN_INTERFACE) as follows:
 #                          +-------------+
@@ -62,18 +63,6 @@ iptables=`which iptables`
 #                          |             |
 #                          +-------------+
 WAN_INTERFACE=eth0
-#
-# Enventually, if DO_NAT='yes', this machine also provides NAT with the internal
-# (LAN) network connected to eth1, leadin to the following configuration:
-#                          +-------------+
-#                          |             |
-#  (WAN Network)-----[eth0]|- - -NAT- - -|[eth1]-----(Internal LAN Network)
-#                          |             |
-#                          +-------------+
-DO_NAT='no'
-# If DO_NAT='no', the following two variables are not used
-LAN_INTERFACE=eth1
-LAN_NETWORK=192.168.200.0/24   # Format: Network/netmask
 
 # When the firewall is activated, by default, no port is opened.
 # Now list the TCP ports that need to be opened (see also /etc/services)
@@ -87,6 +76,26 @@ TCP_PORTS_TO_OPEN="22 80 443"
 # ICMP (i.e. ping) setup for the WAN interface
 #    Note: icmp is always authorized from the eventual LAN interface 
 AUTHORIZE_ICMP="no"
+
+##### NAT Configuration ######
+# Eventually, if DO_NAT='yes', this machine also provides NAT with the internal
+# (LAN) network connected to eth1, leadin to the following configuration:
+#                          +-------------+
+#                          |             |
+#  (WAN Network)-----[eth0]|- - -NAT- - -|[eth1]-----(Internal LAN Network)
+#                          |             |
+#                          +-------------+
+DO_NAT='no'
+# If DO_NAT='no', the following two variables are not used
+LAN_INTERFACE=eth1
+LAN_NETWORK=192.168.200.0/24   # Format: Network/netmask
+#########################################################
+
+#### Xen Bridging
+# Eventually, if DO_XEN_BRIDGING='yes', this machine also run a Xen domO and a
+# network bridge on one or more interfaces 
+DO_XEN_BRIDGING='no'
+XEN_BRIDGED_INTERFACES="peth1"
 
 #
 # ---------------------------------------------------------------------------
@@ -220,6 +229,16 @@ do_start() {
 		$iptables -A INPUT -i ${LAN_INTERFACE} -p icmp -m state --state NEW,ESTABLISHED,RELATED -j ACCEPT
 		$iptables -A INPUT -i ${LAN_INTERFACE} -p icmp -m limit --limit 2/s -j ACCEPT
     fi
+
+    # Eventually, activate Xen bridges
+	# See also http://www.standingonthebrink.com/index.php/tag/ip6tables/
+	if [ "${DO_XEN_BRIDGING}" == "yes" ]; then
+		for pethX in ${XEN_BRIDGED_INTERFACES}; do
+            # Accept packets that are entering the bridge from the physical
+			# network interface pethX.     
+			$iptables -A FORWARD -m physdev --physdev-in $pethX -j ACCEPT
+		done 
+	fi 
 	
 	# Eventually, authorize ICMP protocol on the WAN interface
 	if [ "${AUTHORIZE_ICMP}" == "yes" ]; then

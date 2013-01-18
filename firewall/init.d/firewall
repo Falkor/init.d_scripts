@@ -34,11 +34,11 @@
 #
 ### BEGIN INIT INFO
 # Provides:          firewall
-# Required-Start:    mountkernfs ifupdown $local_fs
+# Required-Start:    $local_fs $syslog
 # X-Start-Before:    networking
-# Default-Start:     S
-# Required-Stop:
-# Default-Stop:
+# Required-Stop:     $local_fs $syslog
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
 # Short-Description: Configure the ip(6)tables firewall.
 # Description:       Configure the ip(6)tables firewall.
 ### END INIT INFO
